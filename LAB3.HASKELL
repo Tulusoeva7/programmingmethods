@@ -1,0 +1,83 @@
+import Data.List (isInfixOf, maximumBy, nub)
+import Data.Ord (comparing)
+
+-- Очищает строку, оставляя только A, T, C, G
+cleanSequence :: String -> String
+cleanSequence = filter (`elem` "ATCGatcg")
+
+-- Возвращает все подстроки заданной длины
+substringsOfLength :: Int -> String -> [String]
+substringsOfLength n xs
+  | length xs < n = []
+  | otherwise = take n xs : substringsOfLength n (tail xs)
+
+-- Возвращает все уникальные подстроки длиной от minLen до maxLen
+allSubstringsInRange :: Int -> Int -> String -> [String]
+allSubstringsInRange minLen maxLen str = nub $ concat [substringsOfLength n str | n <- [minLen..maxLen]]
+
+-- Находит минимальную уникальную подпоследовательность из seq1, которой нет в seq2
+findMinimalUnique :: Int -> Int -> String -> String -> String
+findMinimalUnique minLen maxLen seq1 seq2 =
+  case filter (`notElem` sub2) sub1 of
+    [] -> "Не найдено"
+    (x:_) -> x
+  where
+    sub1 = allSubstringsInRange minLen maxLen seq1
+    sub2 = allSubstringsInRange minLen maxLen seq2
+
+-- Поиск наибольшей общей подпоследовательности (простая реализация)
+longestCommonSubseq :: String -> String -> String
+longestCommonSubseq seq1 seq2 =
+  maximumBy (comparing length) common
+  where
+    maxLen = min (length seq1) (length seq2)
+    common = [s | l <- [1..maxLen]
+                , s <- substringsOfLength l seq1
+                , s `isInfixOf` seq2]
+
+-- Главная функция
+main :: IO ()
+main = do
+    let minLen = 3  -- Минимальная длина подпоследовательности для анализа
+    let maxLen = 10 -- Максимальная длина (можно увеличить, если нужно)
+
+    let covidWuhan = cleanSequence $
+            "caaaccaacc aactttcgat ctcttgtaga tctgttctct aaacgaactt taaaatctgt" ++
+            "gtggctgtca ctcggctgca tgcttagtgc actcacgcag tataattaat aactaattac" ++
+            "tgtcgttgac aggacacgag taactcgtct atcttctgca ggctgcttac ggtttcgtcc" ++
+            "gttttgcagc cgatcatcag cacatctagg ttttgtccgg gtgtgaccga aaggtaagat" ++
+            "ggagagcctt gtccctggtt tcaacgagaa aacacacgtc caactcagtt tgcctgtttt" ++
+            "acaggttcgc gacgtgctcg tacgtggctt tggagactcc gtggaggagg tcttatcaga" ++
+            "ggcacgtcaa catcttaaag atggcacttg tggcttagta gaagttgaaa aaggcgtttt" ++
+            "gcctcaactt gaacagccct atgtgttcat caaacgttcg gatgctcgaa ctgcacctca" ++
+            "tggtcatgtt atggttgagc tggtagcaga actcgaaggc attcagtacg gtcgtagtgg" ++
+            "tgagacactt ggtgtccttg tccct"
+
+    let fluH5N1 = cleanSequence $
+            "agcaaaagca gggtagataa tcactcaatg agtgacatcg aagccatggc atctcaaggc" ++
+            "cttgtcttac cagggacttg cggggtcctt agttatttgc cggttgatgg tacgaggccc" ++
+            "tgtggttcaa tccttgctga ctacatttta gtcaggttct gggttgggtt ttggttttgg" ++
+            "ggttgagggg atgtcttggt aaaggttcga ggaaaagaga aaggcgggga gttattgaga"
+
+    let covidDelta = cleanSequence $
+            "attaaaggtt tataccttcc caggtaacaa accaaccaac tttcgatctc ttgtagatct" ++
+            "gttctctaaa cgaactttaa aatctgtgta tgtgctgaga tcttcttcta aacgaacaaa" ++
+            "actaaaataa gaattatatc ctcatgttgt ggtggtggtt ggtgttgttg tgttgttgtt" ++
+            "aatcttggca atctctgttg accaaactga aaaacaaaat tagccttgtt tgtgcccttg"
+
+    -- Анализ
+    let minUniqueCovid = findMinimalUnique minLen maxLen covidWuhan fluH5N1
+    let minUniqueFlu = findMinimalUnique minLen maxLen fluH5N1 covidWuhan
+    let minUniqueCovidNew = findMinimalUnique minLen maxLen covidWuhan (fluH5N1 ++ covidDelta)
+    let minUniqueDelta = findMinimalUnique minLen maxLen covidDelta (covidWuhan ++ fluH5N1)
+
+    let maxCommonCovid = longestCommonSubseq covidWuhan covidDelta
+    let ratio = fromIntegral (length maxCommonCovid) / fromIntegral (length covidWuhan)
+
+    -- Результаты
+    putStrLn $ "Минимальная уникальная подпоследовательность COVID-19 (Ухань), отсутствующая в H5N1: " ++ minUniqueCovid
+    putStrLn $ "Минимальная уникальная подпоследовательность H5N1, отсутствующая в COVID-19 (Ухань): " ++ minUniqueFlu
+    putStrLn $ "Минимальная уникальная подпоследовательность COVID-19 (Ухань), отсутствующая в H5N1 и Дельте: " ++ minUniqueCovidNew
+    putStrLn $ "Минимальная уникальная подпоследовательность COVID-19 (Дельта), отсутствующая в H5N1 и Ухане: " ++ minUniqueDelta
+    putStrLn $ "Наибольшая общая подпоследовательность между Уханем и Дельтой: " ++ maxCommonCovid
+    putStrLn $ "Соотношение длины общей подпоследовательности к длине генома Уханя: " ++ show ratio
