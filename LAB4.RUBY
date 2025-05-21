@@ -1,109 +1,78 @@
-include Math
+# --- Параметры сигнала ---
+sampling_rate = 10_000  # Частота дискретизации
+duration = 1.0          # Продолжительность сигнала
 
+# Временные точки от 0 до 0.9999 с шагом 1/10000 (0.0001)
+time_steps = (0...sampling_rate).map { |i| i.to_f / sampling_rate }
 
-fs = 10_000
-duration = 1.0
-n = (fs * duration).to_i
-t = Array.new(n) { |i| i.to_f / fs }
+# --- Определение трёх разных сигналов ---
+signal_defs = {
+  case1: { freqs: [100], amps: [1] },                # Один синус с частотой 100 Гц и амплитудой 1
+  case2: { freqs: [100, 300, 700], amps: [1, 1, 1] }, # Сумма трёх синусов с одинаковыми амплитудами
+  case3: { freqs: [100, 300, 700], amps: [3, 2, 1] }  # Те же частоты, но разные амплитуды: 3, 2 и 1
+}
 
+# --- Функция для расчёта амплитуд на заданных частотах (разреженное ДПФ) ---
+def compute_dft(signal, sampling_rate, target_freqs)
+  n = signal.size     # Количество точек в сигнале
+  results = {}        # Словарь: частота => амплитуда
 
-freqs_list = [
-  [100],
-  [100, 300, 700],
-  [100, 300, 700],
-]
+  target_freqs.each do |f|  # Проходим по каждой интересующей частоте
+    re = 0.0  # Реальная часть (cos)
+    im = 0.0  # Мнимая часть (sin)
 
-amps_list = [
-  [1],
-  [1, 1, 1],
-  [3, 2, 1],
-]
-
-
-def generate_signal(freqs, amps, t)
-  signal = Array.new(t.length, 0.0)
-  freqs.each_with_index do |f, i|
-    t.each_with_index do |ti, j|
-      signal[j] += amps[i] * cos(2 * PI * f * ti)
+    signal.each_with_index do |y, i|  # Перебираем точки сигнала
+      angle = 2.0 * Math::PI * f * i / sampling_rate  # Угол аргумента
+      re += y * Math.cos(angle)
+      im -= y * Math.sin(angle)
     end
-  end
-  signal
-end
 
-def compute_fft(signal)
-  n = signal.length
-  spectrum = []
-  (0...(n/2)).each do |k|
-    re = 0.0
-    im = 0.0
-    n.times do |t|
-      angle = 2 * PI * k * t / n
-      re += signal[t] * cos(angle)
-      im -= signal[t] * sin(angle)
-    end
-    magnitude = sqrt(re**2 + im**2) / n
-    magnitude *= 2 if k != 0  
-    spectrum << magnitude
-  end
-  spectrum
-end
-
-
-def find_peaks(spectrum, fs, threshold = 0.1)
-  peaks = []
-  n = spectrum.length * 2
-  spectrum.each_with_index do |amp, k|
-    freq = k * fs.to_f / n
-    peaks << freq.round if amp > threshold
-  end
-  peaks
-end
-
-
-def add_noise(signal, multiplier)
-  require 'securerandom'
-  rng = Random.new(SecureRandom.random_number(1 << 30))
-  signal.map { |x| x + multiplier * gaussian_noise(rng) }
-end
-
-def gaussian_noise(rng)
-
-  u1 = rng.rand
-  u2 = rng.rand
-  Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2 * Math::PI * u2)
-end
-
-puts "\n--- Задача 1: генерация спектров ---"
-(0..2).each do |i|
-  sig = generate_signal(freqs_list[i], amps_list[i], t)
-  puts "\n--- Задание #{i+1} ---"
-  puts "f = #{freqs_list[i]}, a = #{amps_list[i]}"
-  print "Первые 5 отсчётов: "
-  puts sig[0...5].map { |x| format('%.2f', x) }.join(' ')
-end
-
-puts "\n--- Задача 2: спектр сигнала ---"
-(0..2).each do |i|
-  sig = generate_signal(freqs_list[i], amps_list[i], t)
-  spectrum = compute_fft(sig)
-
-  puts "\n--- Задание #{i+1} ---"
-  puts "Частота(Гц)\tАмплитуда"
-  (0...(spectrum.length / 4)).each do |k|
-    freq = k * fs.to_f / n
-    puts format("%.1f\t%.4f", freq, spectrum[k])
+    amplitude = Math.sqrt(re**2 + im**2) * 2.0 / n
+    results[f] = amplitude  # Сохраняем амплитуду для этой частоты
   end
 
-  peaks = find_peaks(spectrum, fs)
-  puts "\nЗадание #{i+1}: основные частоты #{peaks.join(', ')} Гц"
-  puts "Сжатие данных: #{n} → #{peaks.length * 2} (коэффициент #{(n.to_f / (peaks.length * 2)).round(1)}:1)"
+  return results
 end
 
-puts "\n--- Задача 3: Влияние шума ---"
-signal = generate_signal(freqs_list[2], amps_list[2], t)
-[0.5, 1.0, 2.0, 5.0].each do |m|
-  noisy = add_noise(signal, m)
-  spectrum = compute_fft(noisy)
-  peaks = find_peaks(spectrum, fs)
-  puts "Шум ×#{m}: частоты #{peaks.join(', ')} Гц"
+# --- Генерация сигналов, расчёт ДПФ и вывод ---
+signal_defs.each do |case_name, defn|
+  freqs = defn[:freqs]
+  amps  = defn[:amps]
+
+  signal = time_steps.map do |t|
+    freqs.each_with_index.sum { |f, idx| amps[idx] * Math.cos(2 * Math::PI * f * t) }
+  end
+
+  dft = compute_dft(signal, sampling_rate, freqs)
+
+  puts "\n#{case_name}: Результаты ДПФ:"
+  dft.each { |f, a| puts "Частота #{f} Гц → амплитуда #{a.round(3)}" }
+
+  # Считаем коэффициент сжатия
+  n = signal.size
+  m = freqs.size
+  ratio = n.to_f / m
+  puts "Коэффициент сжатия: #{n} отсчётов / #{m} значений = ≈ #{ratio.round(1)}"
+end
+
+# --- Проверка, как сигнал изменится, если в него добавить шум ---
+noise_levels = [0.1, 1.0, 5.0]  # Слабый, средний и сильный шум
+
+signal_defs.each do |case_name, defn|
+  freqs = defn[:freqs]
+  amps  = defn[:amps]
+
+  base_signal = time_steps.map do |t|
+    freqs.each_with_index.sum { |f, idx| amps[idx] * Math.cos(2 * Math::PI * f * t) }
+  end
+
+  noise_levels.each do |noise_amp|
+    # Добавляем шум: каждое значение плюс случайное число в пределах ±noise_amp
+    noisy = base_signal.map { |y| y + (rand * 2 - 1) * noise_amp }
+
+    dft_noisy = compute_dft(noisy, sampling_rate, freqs)
+
+    puts "\n#{case_name} с шумом амплитудой ±#{noise_amp}:"
+    dft_noisy.each { |f, a| puts "Частота #{f} Гц → амплитуда #{a.round(3)}" }
+  end
 end
